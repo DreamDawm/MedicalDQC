@@ -12,7 +12,10 @@ router = APIRouter()
 
 @router.post("", response_model=TaskResponse)
 def create_task(data: TaskCreate, db: Session = Depends(get_db)):
-    task = ValidationTask(**data.model_dump())
+    task_data = data.model_dump()
+    # Convert UUID objects to strings for JSON serialization
+    task_data["rule_ids"] = [str(rid) for rid in task_data.get("rule_ids", [])]
+    task = ValidationTask(**task_data)
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -33,7 +36,11 @@ def update_task(
     ).first()
     if not task:
         raise HTTPException(404, "任务不存在")
-    for key, val in data.model_dump(exclude_unset=True).items():
+    update_data = data.model_dump(exclude_unset=True)
+    # Convert UUID objects to strings for JSON serialization
+    if "rule_ids" in update_data:
+        update_data["rule_ids"] = [str(rid) for rid in update_data["rule_ids"]]
+    for key, val in update_data.items():
         setattr(task, key, val)
     db.commit()
     db.refresh(task)

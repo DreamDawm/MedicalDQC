@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.production
+.env.example
+
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# GX Reports
+reports/
+
+# Superpowers
+.superpowers/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Database
+*.db
+*.sqlite3
+
+# Alembic
+alembic/versions/__pycache__/
