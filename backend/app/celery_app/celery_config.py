@@ -2,6 +2,9 @@ from celery import Celery
 
 from app.config import settings
 
+# 固定的 worker 节点名，确保只有一个 worker 运行
+WORKER_NAME = "dataqc-worker"
+
 celery_app = Celery(
     "dataqc",
     broker=settings.redis_url,
@@ -25,3 +28,16 @@ celery_app.conf.update(
         "max_connections": 10,
     },
 )
+
+
+def check_existing_worker() -> bool:
+    """检查是否已有同名 worker 在运行"""
+    inspect = celery_app.control.inspect()
+    active = inspect.active()
+    if active is None:
+        return False
+    # 检查是否有同名 worker
+    for worker_name in active.keys():
+        if worker_name == WORKER_NAME or worker_name.endswith(WORKER_NAME):
+            return True
+    return False
