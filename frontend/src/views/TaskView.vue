@@ -37,6 +37,28 @@
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
+        <el-table-column label="日志" width="80" align="center">
+          <template #default="{ row }">
+            <el-button
+              size="small"
+              type="info"
+              link
+              @click="showLog(row)"
+              :disabled="!hasRunResult(row)"
+            >
+              查看
+            </el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="进度" width="80" align="center">
+          <template #default="{ row }">
+            <ProgressRing
+              :progress="row._progress || 0"
+              :status="row._status || 'idle'"
+              :size="40"
+            />
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 
@@ -93,6 +115,12 @@
         <el-button type="primary" @click="handleUpdate" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
+
+    <LogViewer
+      v-model:visible="logDialog"
+      :task-id="selectedTaskId"
+      @complete="onTaskComplete"
+    />
   </div>
 </template>
 
@@ -101,6 +129,8 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { taskApi, datasourceApi, validationRuleApi } from '../api'
 import CronSelector from '../components/CronSelector.vue'
+import ProgressRing from '../components/ProgressRing.vue'
+import LogViewer from '../components/LogViewer.vue'
 
 const tasks = ref([])
 const datasources = ref([])
@@ -110,6 +140,8 @@ const loading = ref(false)
 const showDialog = ref(false)
 const editDialog = ref(false)
 const saving = ref(false)
+const logDialog = ref(false)
+const selectedTaskId = ref('')
 
 const form = ref({
   name: '',
@@ -170,6 +202,7 @@ async function loadData() {
     ])
     tasks.value = tasksRes.data
     datasources.value = dsRes.data
+    await loadTaskProgress()
   } finally {
     loading.value = false
   }
@@ -251,32 +284,74 @@ async function handleUpdate() {
 }
 
 async function handleRun(task) {
-  // 设置行级 loading 状态，立即给用户反馈
   task._running = true
-
-  // 先立即显示提示，让用户知道操作已开始
-  const loadingMsg = ElMessage({
-    message: '正在提交任务...',
-    type: 'info',
-    duration: 0,  // 不自动关闭
-  })
+  task._progress = 0
+  task._status = 'running'
 
   try {
     await taskApi.run(task.id)
-    loadingMsg.close()
-    ElMessage.success('任务已提交执行，请稍后查看结果')
+    ElMessage.success('任务已开始执行')
+    startProgressPolling(task)
   } catch (error) {
-    loadingMsg.close()
     ElMessage.error('执行失败: ' + (error.response?.data?.detail || error.message))
-  } finally {
     task._running = false
+    task._status = 'error'
   }
+}
+
+function startProgressPolling(task) {
+  const poll = async () => {
+    try {
+      const { data } = await taskApi.getProgress(task.id)
+      task._progress = data.progress || 0
+      task._status = data.status || 'running'
+
+      if (data.status === 'success' || data.status === 'failed' || data.status === 'error') {
+        task._running = false
+      }
+    } catch {
+      // 忽略轮询错误
+    }
+  }
+
+  const intervalId = setInterval(async () => {
+    await poll()
+    if (!task._running) {
+      clearInterval(intervalId)
+    }
+  }, 2000)
 }
 
 async function handleDelete(task) {
   await ElMessageBox.confirm('确定删除该任务？', '提示')
   await taskApi.delete(task.id)
   ElMessage.success('已删除')
+  loadData()
+}
+
+function hasRunResult(task) {
+  return task._status && task._status !== 'idle'
+}
+
+async function loadTaskProgress() {
+  for (const task of tasks.value) {
+    try {
+      const { data } = await taskApi.getProgress(task.id)
+      task._progress = data.progress || 0
+      task._status = data.status || 'idle'
+    } catch {
+      task._progress = 0
+      task._status = 'idle'
+    }
+  }
+}
+
+function showLog(task) {
+  selectedTaskId.value = task.id
+  logDialog.value = true
+}
+
+function onTaskComplete(status) {
   loadData()
 }
 

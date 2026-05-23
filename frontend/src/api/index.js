@@ -34,6 +34,7 @@ export const taskApi = {
   update: (id, data) => api.put(`/tasks/${id}`, data),
   delete: (id) => api.delete(`/tasks/${id}`),
   run: (id) => api.post(`/tasks/${id}/run`),
+  getProgress: (id) => api.get(`/tasks/${id}/current`),
 }
 
 export const resultApi = {
