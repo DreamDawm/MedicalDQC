@@ -15,4 +15,10 @@ celery_app.conf.update(
     timezone="Asia/Shanghai",
     enable_utc=True,
     beat_schedule={},
+    # 优化连接池，减少首次调用延迟
+    broker_pool_limit=10,
+    broker_connection_timeout=5,
+    result_backend_transport_options={
+        "max_connections": 10,
+    },
 )

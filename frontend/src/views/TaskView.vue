@@ -33,7 +33,7 @@
         <el-table-column label="操作" width="250">
           <template #default="{ row }">
             <el-button size="small" type="primary" @click="handleEdit(row)">编辑</el-button>
-            <el-button size="small" type="success" @click="handleRun(row)">执行</el-button>
+            <el-button size="small" type="success" @click="handleRun(row)" :loading="row._running">执行</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -251,11 +251,25 @@ async function handleUpdate() {
 }
 
 async function handleRun(task) {
+  // 设置行级 loading 状态，立即给用户反馈
+  task._running = true
+
+  // 先立即显示提示，让用户知道操作已开始
+  const loadingMsg = ElMessage({
+    message: '正在提交任务...',
+    type: 'info',
+    duration: 0,  // 不自动关闭
+  })
+
   try {
     await taskApi.run(task.id)
-    ElMessage.success('任务已提交执行')
-  } catch {
-    ElMessage.error('执行失败')
+    loadingMsg.close()
+    ElMessage.success('任务已提交执行，请稍后查看结果')
+  } catch (error) {
+    loadingMsg.close()
+    ElMessage.error('执行失败: ' + (error.response?.data?.detail || error.message))
+  } finally {
+    task._running = false
   }
 }
 

@@ -66,6 +66,10 @@ def trigger_task(task_id: uuid.UUID, db: Session = Depends(get_db)):
     ).first()
     if not task:
         raise HTTPException(404, "任务不存在")
+
+    # 异步提交任务，不等待结果
     from app.celery_app.tasks import run_validation_task
-    celery_task = run_validation_task.delay(str(task_id))
-    return {"message": "任务已提交", "celery_task_id": celery_task.id}
+    run_validation_task.delay(str(task_id))
+
+    # 立即返回，不等待 Celery 响应
+    return {"message": "任务已提交"}
