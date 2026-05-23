@@ -8,6 +8,9 @@ celery_app = Celery(
     backend=settings.redis_url,
 )
 
+# 自动发现任务模块
+celery_app.autodiscover_tasks(["app.celery_app"])
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
