@@ -110,6 +110,9 @@ function connectSSE() {
     } else if (data.type === 'timeout') {
       logs.value.push('[系统] 连接超时，请刷新页面')
       eventSource.close()
+    } else if (data.type === 'error') {
+      logs.value.push('[系统] 错误: ' + (data.message || '未知错误'))
+      eventSource.close()
     }
   }
 
