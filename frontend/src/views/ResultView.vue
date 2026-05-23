@@ -29,10 +29,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="started_at" label="开始时间" width="180" />
-        <el-table-column label="操作" width="180">
+        <el-table-column label="操作" width="240">
           <template #default="{ row }">
             <el-button v-if="row.report_path" size="small" type="success" @click="viewReport(row)">查看</el-button>
             <el-button v-if="row.report_path" size="small" type="primary" @click="downloadReport(row)">下载</el-button>
+            <el-button size="small" type="danger" @click="confirmDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -62,6 +63,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import { resultApi, taskApi } from '../api'
 
 const results = ref([])
@@ -101,6 +103,26 @@ function viewReport(row) {
 
 function downloadReport(row) {
   window.open(resultApi.reportUrl(row.id), '_blank')
+}
+
+function confirmDelete(row) {
+  ElMessageBox.confirm(
+    `确定删除该校验报告吗？此操作不可恢复。`,
+    '删除确认',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  ).then(async () => {
+    try {
+      await resultApi.delete(row.id)
+      ElMessage.success('删除成功')
+      loadData()
+    } catch (error) {
+      ElMessage.error('删除失败')
+    }
+  }).catch(() => {})
 }
 
 async function loadData() {

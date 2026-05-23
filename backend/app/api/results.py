@@ -1,3 +1,4 @@
+import os
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -84,3 +85,21 @@ def view_report(result_id: uuid.UUID, db: Session = Depends(get_db)):
         media_type="text/html",
         headers={"Content-Disposition": "inline"}
     )
+
+
+@router.delete("/{result_id}")
+def delete_result(result_id: uuid.UUID, db: Session = Depends(get_db)):
+    result = db.query(ValidationResult).filter(
+        ValidationResult.id == result_id
+    ).first()
+    if not result:
+        raise HTTPException(404, "结果不存在")
+
+    # 删除报告文件
+    if result.report_path and os.path.exists(result.report_path):
+        os.remove(result.report_path)
+
+    # 删除数据库记录
+    db.delete(result)
+    db.commit()
+    return {"status": "deleted"}

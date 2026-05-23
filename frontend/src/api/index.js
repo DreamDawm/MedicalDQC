@@ -42,4 +42,5 @@ export const resultApi = {
   trend: (params) => api.get('/results/trend', { params }),
   reportUrl: (id) => `/api/results/${id}/report`,
   reportViewUrl: (id) => `/api/results/${id}/report/view`,
+  delete: (id) => api.delete(`/results/${id}`),
 }
