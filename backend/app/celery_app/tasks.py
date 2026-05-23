@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from sqlalchemy.orm.attributes import flag_modified
+
 from app.celery_app.celery_config import celery_app
 from app.database import SessionLocal
 from app.models.datasource import Datasource
@@ -14,7 +16,10 @@ def add_log(result_record, message: str, db) -> None:
     """添加日志条目并保存到数据库"""
     if result_record.logs is None:
         result_record.logs = []
-    result_record.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
+    # 创建新的 list 以触发 SQLAlchemy 变更检测
+    # 日志格式: [YYYY-MM-DD HH:MM:SS] 消息内容
+    result_record.logs = result_record.logs + [f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}"]
+    flag_modified(result_record, "logs")
     db.commit()
 
 
@@ -47,7 +52,10 @@ def run_validation_task(self, task_id: str):
         db.add(result_record)
         db.commit()
 
-        add_log(result_record, f"开始执行校验任务: {task.name}", db)
+        add_log(result_record, f"========== 开始执行校验任务 ==========", db)
+        add_log(result_record, f"任务名称: {task.name}", db)
+        add_log(result_record, f"数据源: {ds.name} ({ds.db_type})", db)
+        add_log(result_record, f"数据库地址: {ds.host}:{ds.port}/{ds.database}", db)
         update_progress(result_record, 5, db)
 
         rules = db.query(ValidationRule).filter(
@@ -55,7 +63,12 @@ def run_validation_task(self, task_id: str):
             ValidationRule.enabled == True,
         ).all()
 
-        add_log(result_record, f"找到 {len(rules)} 条校验规则", db)
+        add_log(result_record, f"启用规则数量: {len(rules)} 条", db)
+        for i, rule in enumerate(rules, 1):
+            builtin = db.query(BuiltinRule).filter(
+                BuiltinRule.id == rule.builtin_rule_id
+            ).first()
+            add_log(result_record, f"  规则 {i}: {builtin.display_name} - 表[{rule.table_name}] 列[{rule.column_name or '全表'}]", db)
         update_progress(result_record, 10, db)
 
         tables_expectations = {}
@@ -77,9 +90,10 @@ def run_validation_task(self, task_id: str):
                 "expectation_type": builtin.expectation_type,
                 "display_name": builtin.display_name,
                 "kwargs": kwargs,
+                "rule_id": rule.id,
             })
 
-        add_log(result_record, f"需校验 {len(tables_expectations)} 个表", db)
+        add_log(result_record, f"需校验表数量: {len(tables_expectations)} 个", db)
         update_progress(result_record, 15, db)
 
         all_results = []
@@ -87,7 +101,9 @@ def run_validation_task(self, task_id: str):
         current_table_idx = 0
 
         for table, expectations in tables_expectations.items():
-            add_log(result_record, f"开始校验表: {table} ({len(expectations)} 条规则)", db)
+            add_log(result_record, f"----------------------------------------", db)
+            add_log(result_record, f"开始校验表: {table}", db)
+            add_log(result_record, f"  规则数量: {len(expectations)} 条", db)
 
             table_result = run_expectations(
                 db_type=ds.db_type,
@@ -101,9 +117,25 @@ def run_validation_task(self, task_id: str):
             )
             all_results.extend(table_result["results"])
 
+            # 详细记录每个规则的执行结果
+            for r in table_result["results"]:
+                exp_info = next((e for e in expectations if e["expectation_type"] == r["expectation_type"]), None)
+                rule_display = exp_info.get("display_name", r["expectation_type"]) if exp_info else r["expectation_type"]
+                col_info = r["kwargs"].get("column", "全表")
+                status = "✓ 通过" if r["success"] else "✗ 失败"
+                # 尝试获取记录数信息
+                result_detail = r.get("result", {})
+                element_count = result_detail.get("element_count", "N/A")
+                unexpected_count = result_detail.get("unexpected_count", 0)
+                if element_count != "N/A" and isinstance(element_count, int):
+                    passed_count = element_count - unexpected_count
+                    add_log(result_record, f"  [{status}] {rule_display} - 列[{col_info}] | 记录数: {element_count}, 通过: {passed_count}, 失败: {unexpected_count}", db)
+                else:
+                    add_log(result_record, f"  [{status}] {rule_display} - 列[{col_info}]", db)
+
             passed = sum(1 for r in table_result["results"] if r["success"])
             failed = len(table_result["results"]) - passed
-            add_log(result_record, f"表 {table} 校验完成: 通过 {passed}, 失败 {failed}", db)
+            add_log(result_record, f"表 {table} 校验完成: 通过 {passed} 条, 失败 {failed} 条", db)
 
             current_table_idx += 1
             progress = 15 + int((current_table_idx / total_tables) * 75)
@@ -112,7 +144,14 @@ def run_validation_task(self, task_id: str):
         passed = sum(1 for r in all_results if r["success"])
         failed = len(all_results) - passed
 
-        add_log(result_record, "开始生成报告", db)
+        add_log(result_record, f"----------------------------------------", db)
+        add_log(result_record, f"========== 校验汇总 ==========", db)
+        add_log(result_record, f"总校验规则: {len(all_results)} 条", db)
+        add_log(result_record, f"通过: {passed} 条", db)
+        add_log(result_record, f"失败: {failed} 条", db)
+        add_log(result_record, f"通过率: {(passed/len(all_results)*100):.1f}%", db)
+
+        add_log(result_record, f"开始生成报告...", db)
         update_progress(result_record, 90, db)
 
         report_path = None
@@ -121,7 +160,7 @@ def run_validation_task(self, task_id: str):
             report_path = generate_html_report(task.name, all_results)
             add_log(result_record, f"报告已生成: {report_path}", db)
         except ImportError:
-            add_log(result_record, "报告服务不可用，跳过报告生成", db)
+            add_log(result_record, f"报告服务不可用，跳过报告生成", db)
 
         result_record.status = "success" if failed == 0 else "failed"
         result_record.finished_at = datetime.utcnow()
@@ -131,15 +170,18 @@ def run_validation_task(self, task_id: str):
         result_record.result_detail = {"results": all_results}
         result_record.report_path = report_path
         result_record.progress = 100
+        flag_modified(result_record, "result_detail")
         db.commit()
 
-        add_log(result_record, f"任务完成: 状态={result_record.status}, 通过={passed}, 失败={failed}", db)
+        add_log(result_record, f"========== 任务完成 ==========", db)
+        add_log(result_record, f"最终状态: {result_record.status}", db)
 
         return {"status": result_record.status, "passed": passed, "failed": failed}
 
     except Exception as e:
         if 'result_record' in locals():
-            add_log(result_record, f"任务执行出错: {str(e)}", db)
+            add_log(result_record, f"========== 任务执行出错 ==========", db)
+            add_log(result_record, f"错误信息: {str(e)}", db)
             result_record.status = "error"
             result_record.finished_at = datetime.utcnow()
             result_record.result_detail = {"error": str(e)}
