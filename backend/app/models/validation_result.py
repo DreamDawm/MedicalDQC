@@ -31,3 +31,5 @@ class ValidationResult(Base):
     report_path: Mapped[str | None] = mapped_column(
         String(500), nullable=True
     )
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    logs: Mapped[list] = mapped_column(JSON, default=list)

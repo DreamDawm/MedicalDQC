@@ -15,6 +15,8 @@ class ResultResponse(BaseModel):
     failed_count: int
     result_detail: dict
     report_path: str | None
+    progress: int = 0
+    logs: list = []
 
     model_config = {"from_attributes": True}
 
