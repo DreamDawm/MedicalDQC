@@ -27,8 +27,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" width="180">
           <template #default="{ row }">
+            <el-button size="small" type="primary" @click="handleEdit(row)">编辑</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -77,6 +78,50 @@
         <el-button type="primary" @click="handleCreate" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 编辑规则对话框 -->
+    <el-dialog v-model="editDialog" title="编辑校验规则" width="600px">
+      <el-form :model="editForm" label-width="100px">
+        <el-form-item label="数据源">
+          <el-select v-model="editForm.datasource_id" @change="onEditDatasourceChange" style="width: 100%">
+            <el-option v-for="ds in datasources" :key="ds.id" :label="ds.name" :value="ds.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="表名">
+          <el-select v-model="editForm.table_name" @change="onEditTableChange" style="width: 100%">
+            <el-option v-for="t in editTables" :key="t.table_name" :label="t.table_name" :value="t.table_name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="列名">
+          <el-select v-model="editForm.column_name" clearable style="width: 100%">
+            <el-option
+              v-for="c in editColumns"
+              :key="c.column_name"
+              :label="formatColumnLabel(c)"
+              :value="c.column_name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="校验规则">
+          <RuleSelector v-model="editForm.builtin_rule_id" :rules="builtinRules" @change="onEditRuleChange" />
+        </el-form-item>
+        <el-form-item label="容忍度">
+          <el-input-number v-model="editForm.mostly" :min="0" :max="1" :step="0.05" :precision="2" />
+        </el-form-item>
+        <el-form-item label="严重等级">
+          <el-select v-model="editForm.severity" style="width: 100%">
+            <el-option label="critical" value="critical" />
+            <el-option label="warning" value="warning" />
+            <el-option label="info" value="info" />
+          </el-select>
+        </el-form-item>
+        <ParameterForm v-if="editSelectedRule" :schema="editSelectedRule.parameters_schema" v-model="editForm.parameters" />
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleUpdate" :loading="saving">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -92,8 +137,11 @@ const builtinRules = ref([])
 const datasources = ref([])
 const tables = ref([])
 const columns = ref([])
+const editTables = ref([])
+const editColumns = ref([])
 const loading = ref(false)
 const showDialog = ref(false)
+const editDialog = ref(false)
 const saving = ref(false)
 
 const form = ref({
@@ -106,8 +154,24 @@ const form = ref({
   severity: 'warning',
 })
 
+const editForm = ref({
+  id: '',
+  datasource_id: '',
+  table_name: '',
+  column_name: '',
+  builtin_rule_id: '',
+  parameters: {},
+  mostly: null,
+  severity: 'warning',
+  enabled: true,
+})
+
 const selectedRule = computed(() =>
   builtinRules.value.find(r => r.id === form.value.builtin_rule_id)
+)
+
+const editSelectedRule = computed(() =>
+  builtinRules.value.find(r => r.id === editForm.value.builtin_rule_id)
 )
 
 function getRuleName(builtinRuleId) {
@@ -179,6 +243,80 @@ async function handleCreate() {
     loadData()
   } catch {
     ElMessage.error('创建失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function handleEdit(rule) {
+  // 查找规则对应的数据源
+  const ds = datasources.value.find(d => d.name === rule.datasource_name || d.id === rule.datasource_id)
+  if (!ds) {
+    ElMessage.warning('未找到对应的数据源')
+    return
+  }
+
+  editForm.value = {
+    id: rule.id,
+    datasource_id: ds.id,
+    table_name: rule.table_name,
+    column_name: rule.column_name,
+    builtin_rule_id: rule.builtin_rule_id,
+    parameters: rule.parameters || {},
+    mostly: rule.mostly,
+    severity: rule.severity,
+    enabled: rule.enabled,
+  }
+
+  // 加载表和列
+  try {
+    const { data: tableData } = await datasourceApi.getTables(ds.id)
+    editTables.value = tableData
+
+    if (rule.table_name) {
+      const { data: colData } = await datasourceApi.getColumns(ds.id, rule.table_name)
+      editColumns.value = colData
+    }
+  } catch {
+    ElMessage.error('加载数据失败')
+  }
+
+  editDialog.value = true
+}
+
+async function onEditDatasourceChange(dsId) {
+  editTables.value = []
+  editColumns.value = []
+  editForm.value.table_name = ''
+  editForm.value.column_name = ''
+  if (dsId) {
+    const { data } = await datasourceApi.getTables(dsId)
+    editTables.value = data
+  }
+}
+
+async function onEditTableChange(table) {
+  editColumns.value = []
+  editForm.value.column_name = ''
+  if (table && editForm.value.datasource_id) {
+    const { data } = await datasourceApi.getColumns(editForm.value.datasource_id, table)
+    editColumns.value = data
+  }
+}
+
+function onEditRuleChange() {
+  editForm.value.parameters = {}
+}
+
+async function handleUpdate() {
+  saving.value = true
+  try {
+    await validationRuleApi.update(editForm.value.id, editForm.value)
+    ElMessage.success('规则更新成功')
+    editDialog.value = false
+    loadData()
+  } catch {
+    ElMessage.error('更新失败')
   } finally {
     saving.value = false
   }
