@@ -49,7 +49,12 @@
         </el-form-item>
         <el-form-item label="列名">
           <el-select v-model="form.column_name" clearable style="width: 100%">
-            <el-option v-for="c in columns" :key="c.column_name" :label="`${c.column_name} (${c.data_type})`" :value="c.column_name" />
+            <el-option
+              v-for="c in columns"
+              :key="c.column_name"
+              :label="formatColumnLabel(c)"
+              :value="c.column_name"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="校验规则">
@@ -114,6 +119,15 @@ function severityType(severity) {
   if (severity === 'critical') return 'danger'
   if (severity === 'warning') return 'warning'
   return 'info'
+}
+
+function formatColumnLabel(col) {
+  // 格式：英文字段 (类型) 中文注释
+  const parts = [col.column_name, `(${col.data_type})`]
+  if (col.comment) {
+    parts.push(col.comment)
+  }
+  return parts.join(' ')
 }
 
 async function loadData() {
