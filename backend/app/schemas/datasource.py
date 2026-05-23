@@ -45,3 +45,4 @@ class ColumnInfo(BaseModel):
     column_name: str
     data_type: str
     is_nullable: bool
+    comment: str = ""  # 列注释，默认空字符串
