@@ -41,4 +41,5 @@ export const resultApi = {
   get: (id) => api.get(`/results/${id}`),
   trend: (params) => api.get('/results/trend', { params }),
   reportUrl: (id) => `/api/results/${id}/report`,
+  reportViewUrl: (id) => `/api/results/${id}/report/view`,
 }

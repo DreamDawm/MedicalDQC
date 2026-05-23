@@ -92,7 +92,7 @@ function statusType(status) {
 function viewReport(row) {
   reportDialog.value = true
   reportLoading.value = true
-  reportUrl.value = resultApi.reportUrl(row.id)
+  reportUrl.value = resultApi.reportViewUrl(row.id)
   // iframe 加载完成后关闭 loading
   setTimeout(() => {
     reportLoading.value = false

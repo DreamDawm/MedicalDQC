@@ -68,5 +68,5 @@
               - img [ref=e97]
           - generic [ref=e100]:
             - iframe [ref=e101]:
-              
+              - generic [ref=f1e2]: "{\"detail\":\"Not Found\"}"
             - img [ref=e104]
