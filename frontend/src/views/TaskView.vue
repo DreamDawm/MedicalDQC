@@ -17,7 +17,12 @@
         <el-table-column label="规则数" width="80">
           <template #default="{ row }">{{ row.rule_ids.length }}</template>
         </el-table-column>
-        <el-table-column prop="schedule_cron" label="定时计划" />
+        <el-table-column label="定时计划">
+          <template #default="{ row }">
+            <span v-if="row.schedule_cron">{{ formatCron(row.schedule_cron) }}</span>
+            <span v-else style="color: #999">手动执行</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="is_active" label="状态" width="80">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'info'" size="small">
@@ -50,7 +55,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="定时计划">
-          <el-input v-model="form.schedule_cron" placeholder="cron 表达式（可选）" />
+          <CronSelector v-model="form.schedule_cron" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -65,6 +70,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { taskApi, datasourceApi, validationRuleApi } from '../api'
+import CronSelector from '../components/CronSelector.vue'
 
 const tasks = ref([])
 const datasources = ref([])
@@ -83,6 +89,35 @@ const form = ref({
 function getDsName(dsId) {
   const ds = datasources.value.find(d => d.id === dsId)
   return ds ? ds.name : dsId
+}
+
+function formatCron(cron) {
+  const cronMap = {
+    '0 * * * *': '每小时整点',
+    '0 */2 * * *': '每2小时',
+    '0 */4 * * *': '每4小时',
+    '0 */6 * * *': '每6小时',
+    '0 */12 * * *': '每12小时',
+    '0 0 * * *': '每天 00:00',
+    '0 6 * * *': '每天 06:00',
+    '0 8 * * *': '每天 08:00',
+    '0 12 * * *': '每天 12:00',
+    '0 18 * * *': '每天 18:00',
+    '0 22 * * *': '每天 22:00',
+    '0 0 * * 1': '每周一 00:00',
+    '0 8 * * 1': '每周一 08:00',
+    '0 0 * * 2': '每周二 00:00',
+    '0 0 * * 3': '每周三 00:00',
+    '0 0 * * 4': '每周四 00:00',
+    '0 0 * * 5': '每周五 00:00',
+    '0 0 * * 6': '每周六 00:00',
+    '0 0 * * 0': '每周日 00:00',
+    '0 0 1 * *': '每月1日 00:00',
+    '0 8 1 * *': '每月1日 08:00',
+    '0 0 15 * *': '每月15日 00:00',
+    '0 0 L * *': '每月最后一天 00:00',
+  }
+  return cronMap[cron] || cron
 }
 
 async function loadData() {
