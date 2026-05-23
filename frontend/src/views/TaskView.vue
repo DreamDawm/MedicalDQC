@@ -30,8 +30,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" width="250">
           <template #default="{ row }">
+            <el-button size="small" type="primary" @click="handleEdit(row)">编辑</el-button>
             <el-button size="small" type="success" @click="handleRun(row)">执行</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
@@ -63,6 +64,35 @@
         <el-button type="primary" @click="handleCreate" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 编辑任务对话框 -->
+    <el-dialog v-model="editDialog" title="编辑校验任务" width="500px">
+      <el-form :model="editForm" label-width="100px">
+        <el-form-item label="任务名称">
+          <el-input v-model="editForm.name" />
+        </el-form-item>
+        <el-form-item label="数据源">
+          <el-select v-model="editForm.datasource_id" @change="onEditDsChange" style="width: 100%">
+            <el-option v-for="ds in datasources" :key="ds.id" :label="ds.name" :value="ds.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="校验规则">
+          <el-select v-model="editForm.rule_ids" multiple style="width: 100%">
+            <el-option v-for="r in editAvailableRules" :key="r.id" :label="r.table_name + ' - ' + (r.column_name || '*')" :value="r.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="定时计划">
+          <CronSelector v-model="editForm.schedule_cron" />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-switch v-model="editForm.is_active" active-text="激活" inactive-text="停用" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleUpdate" :loading="saving">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -75,8 +105,10 @@ import CronSelector from '../components/CronSelector.vue'
 const tasks = ref([])
 const datasources = ref([])
 const availableRules = ref([])
+const editAvailableRules = ref([])
 const loading = ref(false)
 const showDialog = ref(false)
+const editDialog = ref(false)
 const saving = ref(false)
 
 const form = ref({
@@ -84,6 +116,15 @@ const form = ref({
   datasource_id: '',
   rule_ids: [],
   schedule_cron: '',
+})
+
+const editForm = ref({
+  id: '',
+  name: '',
+  datasource_id: '',
+  rule_ids: [],
+  schedule_cron: '',
+  is_active: true,
 })
 
 function getDsName(dsId) {
@@ -153,6 +194,57 @@ async function handleCreate() {
     loadData()
   } catch {
     ElMessage.error('创建失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function handleEdit(task) {
+  const ds = datasources.value.find(d => d.id === task.datasource_id)
+  if (!ds) {
+    ElMessage.warning('未找到对应的数据源')
+    return
+  }
+
+  editForm.value = {
+    id: task.id,
+    name: task.name,
+    datasource_id: task.datasource_id,
+    rule_ids: task.rule_ids,
+    schedule_cron: task.schedule_cron || '',
+    is_active: task.is_active,
+  }
+
+  // 加载该数据源下的规则
+  try {
+    const { data } = await validationRuleApi.list({ datasource_id: task.datasource_id })
+    editAvailableRules.value = data
+  } catch {
+    ElMessage.error('加载规则失败')
+  }
+
+  editDialog.value = true
+}
+
+async function onEditDsChange(dsId) {
+  editForm.value.rule_ids = []
+  if (dsId) {
+    const { data } = await validationRuleApi.list({ datasource_id: dsId })
+    editAvailableRules.value = data
+  } else {
+    editAvailableRules.value = []
+  }
+}
+
+async function handleUpdate() {
+  saving.value = true
+  try {
+    await taskApi.update(editForm.value.id, editForm.value)
+    ElMessage.success('任务更新成功')
+    editDialog.value = false
+    loadData()
+  } catch {
+    ElMessage.error('更新失败')
   } finally {
     saving.value = false
   }
