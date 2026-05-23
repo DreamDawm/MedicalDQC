@@ -162,12 +162,25 @@ def run_validation_task(self, task_id: str):
         except ImportError:
             add_log(result_record, f"报告服务不可用，跳过报告生成", db)
 
+        # 将 UUID 转换为字符串，以便 JSON 序列化
+        def convert_uuids(obj):
+            """递归转换字典和列表中的 UUID 为字符串"""
+            if isinstance(obj, dict):
+                return {k: str(v) if hasattr(v, 'hex') else convert_uuids(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_uuids(item) for item in obj]
+            elif hasattr(obj, 'hex'):
+                return str(obj)
+            return obj
+
+        serializable_results = convert_uuids(all_results)
+
         result_record.status = "success" if failed == 0 else "failed"
-        result_record.finished_at = datetime.utcnow()
+        result_record.finished_at = datetime.now()
         result_record.total_expectations = len(all_results)
         result_record.passed_count = passed
         result_record.failed_count = failed
-        result_record.result_detail = {"results": all_results}
+        result_record.result_detail = {"results": serializable_results}
         result_record.report_path = report_path
         result_record.progress = 100
         flag_modified(result_record, "result_detail")
@@ -183,7 +196,7 @@ def run_validation_task(self, task_id: str):
             add_log(result_record, f"========== 任务执行出错 ==========", db)
             add_log(result_record, f"错误信息: {str(e)}", db)
             result_record.status = "error"
-            result_record.finished_at = datetime.utcnow()
+            result_record.finished_at = datetime.now()
             result_record.result_detail = {"error": str(e)}
             db.commit()
         return {"error": str(e)}

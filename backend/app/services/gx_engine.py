@@ -1,7 +1,61 @@
 import sqlalchemy
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, inspect
 
 from app.services.datasource_service import build_connection_url
+
+
+def get_primary_key_columns(engine, table_name: str) -> list[str]:
+    """获取表的主键列名列表"""
+    try:
+        inspector = inspect(engine)
+        pk = inspector.get_pk_constraint(table_name)
+        return pk.get("constrained_columns", [])
+    except Exception:
+        return []
+
+
+def get_failed_records_sample(
+    engine,
+    table_name: str,
+    column: str,
+    primary_keys: list[str],
+    limit: int = 10,
+) -> list[dict]:
+    """获取失败记录的样本（前10条），包含主键ID和失败值"""
+    try:
+        if not primary_keys:
+            # 没有主键时，只获取失败值
+            sql = text(f"""
+                SELECT DISTINCT `{column}` as failed_value
+                FROM `{table_name}`
+                WHERE `{column}` IS NOT NULL
+                LIMIT :limit
+            """)
+            with engine.connect() as conn:
+                result = conn.execute(sql, {"limit": limit})
+                return [{"failed_value": row[0]} for row in result.fetchall()]
+        else:
+            # 有主键时，获取主键ID和失败值
+            pk_select = ", ".join([f"`{pk}`" for pk in primary_keys])
+            sql = text(f"""
+                SELECT {pk_select}, `{column}` as failed_value
+                FROM `{table_name}`
+                WHERE `{column}` IS NOT NULL
+                LIMIT :limit
+            """)
+            with engine.connect() as conn:
+                result = conn.execute(sql, {"limit": limit})
+                records = []
+                for row in result.fetchall():
+                    record = {
+                        "primary_key": {pk: str(getattr(row, pk, row[i]))
+                                       for i, pk in enumerate(primary_keys)},
+                        "failed_value": row.failed_value,
+                    }
+                    records.append(record)
+                return records
+    except Exception as e:
+        return [{"error": str(e)}]
 
 
 def run_expectations(
@@ -18,6 +72,11 @@ def run_expectations(
         db_type, host, port, database, username, password
     )
 
+    engine = create_engine(connection_url)
+
+    # 获取表的主键列
+    primary_keys = get_primary_key_columns(engine, table_name)
+
     # 对于 MySQL，expect_column_values_to_be_unique 有 SQL 语法兼容问题
     # 需要用原生 SQL 处理
     unique_expectations = [
@@ -33,19 +92,19 @@ def run_expectations(
 
     # 处理唯一性检查（使用原生 SQL）
     if unique_expectations:
-        engine = create_engine(connection_url)
         with engine.connect() as conn:
             for exp in unique_expectations:
                 column = exp["kwargs"].get("column")
                 display_name = exp.get("display_name")
+                rule_id = exp.get("rule_id")
                 mostly = exp.get("kwargs", {}).get("mostly")
 
                 # 检查重复值
                 sql = text(f"""
                     SELECT COUNT(*) as total,
-                           COUNT(DISTINCT {column}) as unique_count,
-                           COUNT({column}) as non_null_count
-                    FROM {table_name}
+                           COUNT(DISTINCT `{column}`) as unique_count,
+                           COUNT(`{column}`) as non_null_count
+                    FROM `{table_name}`
                 """)
                 result = conn.execute(sql).fetchone()
                 total = result[0]
@@ -64,16 +123,40 @@ def run_expectations(
                     # 严格要求所有值唯一
                     success = (unique_count == non_null_count) and (duplicate_count == 0)
 
+                # 获取重复值样本（失败的枚举值）
+                failed_sample = []
+                if not success and duplicate_count > 0:
+                    failed_sample_sql = text(f"""
+                        SELECT `{column}` as value, COUNT(*) as count
+                        FROM `{table_name}`
+                        WHERE `{column}` IS NOT NULL
+                        GROUP BY `{column}`
+                        HAVING COUNT(*) > 1
+                        ORDER BY COUNT(*) DESC
+                        LIMIT 10
+                    """)
+                    dup_result = conn.execute(failed_sample_sql)
+                    failed_sample = [
+                        {"value": row[0], "count": row[1]}
+                        for row in dup_result.fetchall()
+                    ]
+
                 results.append({
                     "expectation_type": "expect_column_values_to_be_unique",
                     "display_name": display_name,
+                    "rule_id": rule_id,
                     "success": success,
                     "kwargs": exp["kwargs"],
+                    "table_name": table_name,
+                    "column_name": column,
                     "result": {
-                        "total": total,
+                        "element_count": total,
+                        "null_count": null_count,
                         "unique_count": unique_count,
                         "non_null_count": non_null_count,
-                        "duplicate_count": duplicate_count,
+                        "unexpected_count": duplicate_count,
+                        "unexpected_percent": round(duplicate_count / non_null_count * 100, 2) if non_null_count > 0 else 0,
+                        "partial_unexpected_counts": failed_sample,
                     },
                 })
 
@@ -100,14 +183,16 @@ def run_expectations(
 
         suite = ExpectationSuite(name="runtime_suite")
 
-        # 建立 expectation_type 到 display_name 的映射
-        display_name_map = {}
+        # 建立 expectation_type 到 rule_id 和 display_name 的映射
+        exp_info_map = {}
 
         for exp in other_expectations:
             exp_type = exp["expectation_type"]
             kwargs = exp.get("kwargs", {})
-            if "display_name" in exp:
-                display_name_map[exp_type] = exp["display_name"]
+            exp_info_map[exp_type] = {
+                "display_name": exp.get("display_name"),
+                "rule_id": exp.get("rule_id"),
+            }
             suite.add_expectation(
                 gx.expectations.registry.get_expectation_impl(exp_type)(**kwargs)
             )
@@ -117,12 +202,42 @@ def run_expectations(
 
         for r in validation_result.results:
             exp_type = r.expectation_config.type
+            exp_info = exp_info_map.get(exp_type, {})
+            kwargs = r.expectation_config.kwargs
+            column = kwargs.get("column")
+
+            # 提取 GX 返回的详细结果
+            result_data = r.result if hasattr(r, "result") else {}
+
+            # 标准化结果数据结构
+            result_dict = {
+                "element_count": result_data.get("element_count", 0),
+                "unexpected_count": result_data.get("unexpected_count", 0),
+                "unexpected_percent": result_data.get("unexpected_percent", 0),
+                "partial_unexpected_counts": result_data.get("partial_unexpected_counts", []),
+                "partial_unexpected_list": result_data.get("partial_unexpected_list", []),
+            }
+
+            # 如果有失败记录，获取更详细的失败样本（包含主键ID）
+            failed_sample = []
+            if not r.success and column:
+                # 从 partial_unexpected_list 获取失败值样本
+                unexpected_values = result_dict.get("partial_unexpected_list", [])[:10]
+                if unexpected_values:
+                    failed_sample = [
+                        {"value": v} for v in unexpected_values
+                    ]
+
             results.append({
                 "expectation_type": exp_type,
-                "display_name": display_name_map.get(exp_type),
+                "display_name": exp_info.get("display_name"),
+                "rule_id": exp_info.get("rule_id"),
                 "success": r.success,
-                "kwargs": r.expectation_config.kwargs,
-                "result": r.result if hasattr(r, "result") else {},
+                "kwargs": kwargs,
+                "table_name": table_name,
+                "column_name": column or "全表",
+                "result": result_dict,
+                "failed_sample": failed_sample,
             })
 
     return {
