@@ -29,11 +29,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="started_at" label="开始时间" width="180" />
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" width="180">
           <template #default="{ row }">
-            <el-button v-if="row.report_path" size="small" type="primary" @click="downloadReport(row)">
-              下载报告
-            </el-button>
+            <el-button v-if="row.report_path" size="small" type="success" @click="viewReport(row)">查看</el-button>
+            <el-button v-if="row.report_path" size="small" type="primary" @click="downloadReport(row)">下载</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -47,6 +46,17 @@
         />
       </div>
     </el-card>
+
+    <!-- 查看报告对话框 -->
+    <el-dialog v-model="reportDialog" title="校验报告" width="90%" top="2vh" destroy-on-close>
+      <div v-loading="reportLoading" style="height: 75vh; overflow: auto">
+        <iframe
+          v-if="reportUrl"
+          :src="reportUrl"
+          style="width: 100%; height: 100%; border: none"
+        />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -62,6 +72,11 @@ const page = ref(1)
 const pageSize = 20
 const total = ref(0)
 
+// 查看报告
+const reportDialog = ref(false)
+const reportLoading = ref(false)
+const reportUrl = ref('')
+
 function getTaskName(taskId) {
   const t = tasks.value.find(task => task.id === taskId)
   return t ? t.name : taskId
@@ -72,6 +87,16 @@ function statusType(status) {
   if (status === 'failed') return 'danger'
   if (status === 'running') return 'warning'
   return 'info'
+}
+
+function viewReport(row) {
+  reportDialog.value = true
+  reportLoading.value = true
+  reportUrl.value = resultApi.reportUrl(row.id)
+  // iframe 加载完成后关闭 loading
+  setTimeout(() => {
+    reportLoading.value = false
+  }, 1000)
 }
 
 function downloadReport(row) {
