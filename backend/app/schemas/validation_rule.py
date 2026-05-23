@@ -19,6 +19,7 @@ class ValidationRuleCreate(BaseModel):
 class ValidationRuleUpdate(BaseModel):
     table_name: str | None = None
     column_name: str | None = None
+    builtin_rule_id: uuid.UUID | None = None
     parameters: dict | None = None
     mostly: float | None = None
     severity: str | None = None
