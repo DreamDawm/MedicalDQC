@@ -7,9 +7,15 @@
           <el-button type="primary" @click="showDialog = true">新建规则</el-button>
         </div>
       </template>
-      <el-table :data="rules" v-loading="loading" stripe>
+      <el-table :data="rulesWithComments" v-loading="loading" stripe>
         <el-table-column prop="table_name" label="表名" />
         <el-table-column prop="column_name" label="列名" />
+        <el-table-column prop="column_comment" label="列名注释" width="150">
+          <template #default="{ row }">
+            <span v-if="row.column_comment">{{ row.column_comment }}</span>
+            <span v-else style="color: #999">-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="规则类型">
           <template #default="{ row }">
             {{ getRuleName(row.builtin_rule_id) }}
@@ -133,8 +139,10 @@ import RuleSelector from '../components/RuleSelector.vue'
 import ParameterForm from '../components/ParameterForm.vue'
 
 const rules = ref([])
+const rulesWithComments = ref([])
 const builtinRules = ref([])
 const datasources = ref([])
+const columnCommentMap = ref({}) // 缓存列注释
 const tables = ref([])
 const columns = ref([])
 const editTables = ref([])
@@ -205,9 +213,53 @@ async function loadData() {
     rules.value = rulesRes.data
     builtinRules.value = builtinRes.data
     datasources.value = dsRes.data
+    // 加载列注释
+    await loadColumnComments()
   } finally {
     loading.value = false
   }
+}
+
+async function loadColumnComments() {
+  // 按数据源和表名分组
+  const dsTableMap = new Map()
+  for (const rule of rules.value) {
+    const ds = datasources.value.find(d => d.id === rule.datasource_id)
+    if (!ds || !rule.table_name) continue
+    const key = `${ds.id}:${rule.table_name}`
+    if (!dsTableMap.has(key)) {
+      dsTableMap.set(key, { dsId: ds.id, tableName: rule.table_name })
+    }
+  }
+
+  // 批量获取列注释
+  for (const { dsId, tableName } of dsTableMap.values()) {
+    const cacheKey = `${dsId}:${tableName}`
+    if (columnCommentMap.value[cacheKey]) continue
+    try {
+      const { data: columns } = await datasourceApi.getColumns(dsId, tableName)
+      const commentMap = {}
+      for (const col of columns) {
+        if (col.comment) {
+          commentMap[col.column_name] = col.comment
+        }
+      }
+      columnCommentMap.value[cacheKey] = commentMap
+    } catch {
+      columnCommentMap.value[cacheKey] = {}
+    }
+  }
+
+  // 合并规则和列注释
+  rulesWithComments.value = rules.value.map(rule => {
+    const ds = datasources.value.find(d => d.id === rule.datasource_id)
+    const cacheKey = ds ? `${ds.id}:${rule.table_name}` : null
+    const commentMap = cacheKey ? columnCommentMap.value[cacheKey] || {} : {}
+    return {
+      ...rule,
+      column_comment: rule.column_name ? commentMap[rule.column_name] || '' : ''
+    }
+  })
 }
 
 async function onDatasourceChange(dsId) {
