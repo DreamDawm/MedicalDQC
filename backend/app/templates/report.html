@@ -331,7 +331,7 @@
                                         <div class="detail-row">
                                             <span class="detail-label">失败比例:</span>
                                             <span class="detail-value" style="color: #f56c6c;">
-                                                {{ r.result.unexpected_percent }}%
+                                                {{ "%.2f"|format(r.result.unexpected_percent) }}%
                                             </span>
                                         </div>
                                         {% endif %}

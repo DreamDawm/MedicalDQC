@@ -83,9 +83,16 @@ def run_expectations(
         exp for exp in expectations
         if exp["expectation_type"] == "expect_column_values_to_be_unique"
     ]
+    pair_gte_expectations = [
+        exp for exp in expectations
+        if exp["expectation_type"] == "expect_column_pair_values_A_to_be_greater_than_or_equal_to_B"
+    ]
     other_expectations = [
         exp for exp in expectations
-        if exp["expectation_type"] != "expect_column_values_to_be_unique"
+        if exp["expectation_type"] not in (
+            "expect_column_values_to_be_unique",
+            "expect_column_pair_values_A_to_be_greater_than_or_equal_to_B",
+        )
     ]
 
     results = []
@@ -157,6 +164,55 @@ def run_expectations(
                         "unexpected_count": duplicate_count,
                         "unexpected_percent": round(duplicate_count / non_null_count * 100, 2) if non_null_count > 0 else 0,
                         "partial_unexpected_counts": failed_sample,
+                    },
+                })
+
+    # 处理 A >= B 跨列比较（GX Core 不支持，使用原生 SQL）
+    if pair_gte_expectations:
+        with engine.connect() as conn:
+            for exp in pair_gte_expectations:
+                kwargs = exp.get("kwargs", {})
+                column_a = kwargs.get("column_A")
+                column_b = kwargs.get("column_B")
+                display_name = exp.get("display_name")
+                rule_id = exp.get("rule_id")
+                mostly = kwargs.get("mostly")
+
+                sql = text(f"""
+                    SELECT
+                        COUNT(*) as total,
+                        SUM(CASE WHEN `{column_a}` IS NOT NULL AND `{column_b}` IS NOT NULL
+                                  AND `{column_a}` >= `{column_b}` THEN 1 ELSE 0 END) as passed,
+                        SUM(CASE WHEN `{column_a}` IS NOT NULL AND `{column_b}` IS NOT NULL
+                                  AND `{column_a}` < `{column_b}` THEN 1 ELSE 0 END) as failed,
+                        SUM(CASE WHEN `{column_a}` IS NULL OR `{column_b}` IS NULL THEN 1 ELSE 0 END) as null_count
+                    FROM `{table_name}`
+                """)
+                row = conn.execute(sql).fetchone()
+                total = int(row[0])
+                passed_count = int(row[1])
+                failed_count = int(row[2])
+                null_count = int(row[3])
+                non_null_count = total - null_count
+
+                if mostly is not None:
+                    success = (passed_count / non_null_count >= mostly) if non_null_count > 0 else True
+                else:
+                    success = failed_count == 0
+
+                results.append({
+                    "expectation_type": "expect_column_pair_values_A_to_be_greater_than_or_equal_to_B",
+                    "display_name": display_name,
+                    "rule_id": rule_id,
+                    "success": success,
+                    "kwargs": kwargs,
+                    "table_name": table_name,
+                    "column_name": f"{column_a} >= {column_b}",
+                    "result": {
+                        "element_count": total,
+                        "null_count": null_count,
+                        "unexpected_count": failed_count,
+                        "unexpected_percent": round(float(failed_count) / non_null_count * 100, 2) if non_null_count > 0 else 0,
                     },
                 })
 

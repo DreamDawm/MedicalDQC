@@ -69,7 +69,8 @@ def download_report(result_id: uuid.UUID, db: Session = Depends(get_db)):
     ).first()
     if not result or not result.report_path:
         raise HTTPException(404, "报告不存在")
-    return FileResponse(result.report_path, filename="report.html")
+    report_path = result.report_path.replace("\\", "/")
+    return FileResponse(report_path, filename="report.html")
 
 
 @router.get("/{result_id}/report/view")
@@ -79,9 +80,9 @@ def view_report(result_id: uuid.UUID, db: Session = Depends(get_db)):
     ).first()
     if not result or not result.report_path:
         raise HTTPException(404, "报告不存在")
-    # 内联显示，不触发下载
+    report_path = result.report_path.replace("\\", "/")
     return FileResponse(
-        result.report_path,
+        report_path,
         media_type="text/html",
         headers={"Content-Disposition": "inline"}
     )

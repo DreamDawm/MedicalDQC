@@ -1,0 +1,57 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8999:8999"
+    volumes:
+      - ./backend:/app
+      - backend_packages:/usr/local/lib/python3.11/site-packages
+    environment:
+      - DATABASE_URL=postgresql://postgres:123456@host.docker.internal:5432/dataqc
+      - REDIS_URL=redis://host.docker.internal:6379/0
+      - REPORT_DIR=/app/reports
+      - SECRET_KEY=dev-secret-key-2026
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    command: celery -A app.celery_app.celery_config worker --loglevel=info --pool=prefork --concurrency=4
+    volumes:
+      - ./backend:/app
+      - backend_packages:/usr/local/lib/python3.11/site-packages
+    environment:
+      - DATABASE_URL=postgresql://postgres:123456@host.docker.internal:5432/dataqc
+      - REDIS_URL=redis://host.docker.internal:6379/0
+      - REPORT_DIR=/app/reports
+      - SECRET_KEY=dev-secret-key-2026
+
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    command: celery -A app.celery_app.celery_config beat --loglevel=info
+    volumes:
+      - ./backend:/app
+      - backend_packages:/usr/local/lib/python3.11/site-packages
+    environment:
+      - DATABASE_URL=postgresql://postgres:123456@host.docker.internal:5432/dataqc
+      - REDIS_URL=redis://host.docker.internal:6379/0
+      - REPORT_DIR=/app/reports
+      - SECRET_KEY=dev-secret-key-2026
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - frontend_modules:/app/node_modules
+
+volumes:
+  backend_packages:
+  frontend_modules:

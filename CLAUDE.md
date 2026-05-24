@@ -69,7 +69,24 @@ This project is indexed by GitNexus as **MedicalDQC** (761 symbols, 1063 relatio
 
 ## 开发命令
 
-### 后端
+### Docker 开发环境（推荐）
+
+```bash
+# 启动所有服务（backend, worker, beat, frontend）
+docker-compose up -d
+
+# 重启 worker（修改 celery task 代码后必须执行，worker 不会自动重载）
+docker-compose restart worker
+
+# 查看日志
+docker-compose logs -f worker
+docker-compose logs -f backend
+
+# 重建镜像（修改 Dockerfile 或 requirements.txt 后）
+docker-compose up -d --build
+```
+
+### 后端（本地运行）
 
 ```bash
 # 安装依赖
@@ -151,3 +168,11 @@ npm run build
 - `redis_url`: Celery 消息队列
 - `secret_key`: 密码加密密钥
 - `report_dir`: HTML 报告输出目录
+
+## 已知陷阱
+
+- **Celery worker 不自动重载**: 修改 tasks.py 或 gx_engine.py 后必须 `docker-compose restart worker`
+- **Windows 路径**: 报告路径存入 DB 带反斜杠，Linux 容器中需 `.replace("\\", "/")`
+- **MySQL Decimal**: MySQL 聚合函数返回 Decimal 类型，需 `int()`/`float()` 转换后才能 JSON 序列化
+- **GX Core 跨列校验**: `expect_column_pair_values_A_to_be_greater_than_or_equal_to_B` 不是 GX 内置，在 gx_engine.py 中用 raw SQL 实现
+- **Docker 网络**: 容器访问宿主机服务用 `host.docker.internal`（Docker Desktop）

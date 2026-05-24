@@ -77,7 +77,7 @@
             <el-option label="info" value="info" />
           </el-select>
         </el-form-item>
-        <ParameterForm v-if="selectedRule" :schema="selectedRule.parameters_schema" v-model="form.parameters" />
+        <ParameterForm v-if="selectedRule" :schema="selectedRule.parameters_schema" v-model="form.parameters" :columns="columns" />
       </el-form>
       <template #footer>
         <el-button @click="showDialog = false">取消</el-button>
@@ -121,7 +121,7 @@
             <el-option label="info" value="info" />
           </el-select>
         </el-form-item>
-        <ParameterForm v-if="editSelectedRule" :schema="editSelectedRule.parameters_schema" v-model="editForm.parameters" />
+        <ParameterForm v-if="editSelectedRule" :schema="editSelectedRule.parameters_schema" v-model="editForm.parameters" :columns="editColumns" />
       </el-form>
       <template #footer>
         <el-button @click="editDialog = false">取消</el-button>

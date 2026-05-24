@@ -28,7 +28,9 @@
             {{ row.total_expectations ? Math.round(row.passed_count / row.total_expectations * 100) : 0 }}%
           </template>
         </el-table-column>
-        <el-table-column prop="started_at" label="开始时间" width="180" />
+        <el-table-column label="开始时间" width="180">
+          <template #default="{ row }">{{ formatTime(row.started_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="240">
           <template #default="{ row }">
             <el-button v-if="row.report_path" size="small" type="success" @click="viewReport(row)">查看</el-button>
@@ -78,6 +80,13 @@ const total = ref(0)
 const reportDialog = ref(false)
 const reportLoading = ref(false)
 const reportUrl = ref('')
+
+function formatTime(value) {
+  if (!value) return ''
+  const d = new Date(value)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
 
 function getTaskName(taskId) {
   const t = tasks.value.find(task => task.id === taskId)
