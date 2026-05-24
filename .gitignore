@@ -50,3 +50,11 @@ celerybeat.pid
 
 # Alembic
 alembic/versions/__pycache__/
+
+.superpowers/
+.claude/
+.gitnexus/
+.playwright-cli/
+.pytest_cache/
+docs/
+tests/

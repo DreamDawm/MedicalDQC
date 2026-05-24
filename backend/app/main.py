@@ -1,12 +1,7 @@
-import multiprocessing
-import os
-import sys
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import datasources, builtin_rules, validation_rules, tasks, results, task_progress
-from app.celery_app.celery_config import check_existing_worker, WORKER_NAME
 
 app = FastAPI(title="DataQC", version="1.0.0")
 
@@ -24,46 +19,6 @@ app.include_router(validation_rules.router, prefix="/api/validation-rules", tags
 app.include_router(tasks.router, prefix="/api/tasks", tags=["校验任务"])
 app.include_router(results.router, prefix="/api/results", tags=["校验结果"])
 app.include_router(task_progress.router, prefix="/api", tags=["任务进度"])
-
-# Celery worker 进程
-celery_process = None
-
-
-@app.on_event("startup")
-def startup_event():
-    """启动 Celery worker"""
-    global celery_process
-
-    # 检查是否已有同名 worker 在运行
-    if check_existing_worker():
-        print(f"[Celery] 已有 worker '{WORKER_NAME}' 正在运行，跳过启动")
-        return
-
-    import subprocess
-
-    print(f"[Celery] 启动 worker: {WORKER_NAME}")
-    # 使用 Popen 启动子进程，可以正常终止
-    celery_process = subprocess.Popen([
-        sys.executable, "-m", "celery",
-        "-A", "app.celery_app.celery_config",
-        "worker",
-        "--pool=solo",
-        "--loglevel=info",
-        "-n", WORKER_NAME,
-    ])
-
-
-@app.on_event("shutdown")
-def shutdown_event():
-    """停止 Celery worker"""
-    global celery_process
-    if celery_process:
-        print(f"[Celery] 停止 worker")
-        celery_process.terminate()
-        try:
-            celery_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            celery_process.kill()
 
 
 @app.get("/api/health")

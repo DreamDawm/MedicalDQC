@@ -20,6 +20,14 @@ This project is indexed by GitNexus as **MedicalDQC** (761 symbols, 1063 relatio
 - NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
 - NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
 
+
+
+## 前后端默认的端口
+
+​	前端默认端口是3000
+
+​	后端默认端口是8999
+
 ## Resources
 
 | Resource | Use for |
@@ -74,7 +82,7 @@ alembic upgrade head
 python seed_rules.py
 
 # 启动开发服务器
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8999
 
 # 启动 Celery worker（执行校验）
 celery -A app.celery_app.celery_config worker --loglevel=info
