@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from sqlalchemy.orm.attributes import flag_modified
@@ -164,12 +165,11 @@ def run_validation_task(self, task_id: str):
 
         # 将 UUID 转换为字符串，以便 JSON 序列化
         def convert_uuids(obj):
-            """递归转换字典和列表中的 UUID 为字符串"""
             if isinstance(obj, dict):
-                return {k: str(v) if hasattr(v, 'hex') else convert_uuids(v) for k, v in obj.items()}
+                return {k: convert_uuids(v) for k, v in obj.items()}
             elif isinstance(obj, list):
                 return [convert_uuids(item) for item in obj]
-            elif hasattr(obj, 'hex'):
+            elif isinstance(obj, uuid.UUID):
                 return str(obj)
             return obj
 
@@ -193,12 +193,16 @@ def run_validation_task(self, task_id: str):
 
     except Exception as e:
         if 'result_record' in locals():
-            add_log(result_record, f"========== 任务执行出错 ==========", db)
-            add_log(result_record, f"错误信息: {str(e)}", db)
-            result_record.status = "error"
-            result_record.finished_at = datetime.now()
-            result_record.result_detail = {"error": str(e)}
-            db.commit()
+            try:
+                db.rollback()
+                add_log(result_record, f"========== 任务执行出错 ==========", db)
+                add_log(result_record, f"错误信息: {str(e)}", db)
+                result_record.status = "error"
+                result_record.finished_at = datetime.now()
+                result_record.result_detail = {"error": str(e)}
+                db.commit()
+            except Exception:
+                db.rollback()
         return {"error": str(e)}
     finally:
         db.close()
