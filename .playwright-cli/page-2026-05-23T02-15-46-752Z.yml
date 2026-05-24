@@ -1,8 +1,0 @@
-- generic [ref=e3]:
-  - menubar [ref=e5]:
-    - menuitem "数据源管理" [ref=e6] [cursor=pointer]
-    - menuitem "校验规则" [ref=e7] [cursor=pointer]
-    - menuitem "校验任务" [ref=e8] [cursor=pointer]
-    - menuitem "校验报告" [ref=e9] [cursor=pointer]
-    - menuitem "趋势分析" [ref=e10] [cursor=pointer]
-  - main [ref=e11]
